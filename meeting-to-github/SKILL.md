@@ -24,8 +24,10 @@ Use the approved Markdown record as the source of truth. Never create GitHub iss
 2. Draft the Markdown meeting record in the minutes schema, then obtain its approval.
 3. Generate and inspect the PDF from that approved Markdown, then obtain its separate approval.
 4. Draft person-by-person task candidates from the approved meeting record, then obtain their separate approval.
-5. Search and select existing parent candidates.
-6. Preview and approve one parent bundle at a time.
-7. Preview and approve the exact GitHub mutations as a final, separate gate.
+5. Build the task manifest from the approved candidates with `scripts/build_task_manifest.py`, then run `scripts/validate_task_manifest.py --mode draft`.
+6. Search and select existing parent candidates.
+7. Preview and approve one parent bundle at a time.
+8. Run `scripts/validate_task_manifest.py --mode mutation-ready` immediately before the final mutation preview. If it reports any error, stop: do not write to GitHub.
+9. Preview and approve the exact GitHub mutations as a final, separate gate.
 
 Stop at the current gate until the user explicitly approves it. A later approval never retroactively approves changed content.

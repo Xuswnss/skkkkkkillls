@@ -17,6 +17,15 @@
 - 모호하면 "이 Task를 #N의 하위 Task로 둘까요?"라고 묻는다.
 - 답을 받기 전에는 독립 Task 상태를 유지한다.
 
+## 모호한 회의 Task dry-run 점검
+`tests/fixtures/ambiguous-transcript.txt`를 검토할 때 다음을 모두 확인한다.
+
+- 카메라 수정, 웹 브라우저 업로드 변경, QA를 같은 날짜만으로 연결하지 않는다.
+- QA의 parent는 질문한다. 답을 받기 전에는 독립 Task로 둔다.
+- 담당자가 명시되지 않은 Task는 `Unassigned`로 둔다.
+- 기존 GitHub parent 후보를 검색하기 전에는 새 parent를 확정하지 않는다.
+- 사용자가 Markdown 회의록을 승인하기 전에는 PDF나 GitHub plan을 만들지 않는다.
+
 ## 부분 실패
 - 성공 URL을 기록하고 즉시 중단한다.
 - 생성된 이슈를 삭제하거나 임의 수정하지 않는다.
