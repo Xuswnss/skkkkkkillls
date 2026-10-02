@@ -7,6 +7,11 @@ description: Convert Korean meeting recordings or exported transcripts into an a
 
 Use the approved Markdown record as the source of truth. Never create GitHub issues directly from an unapproved transcript.
 
+## Default GitHub targets
+
+- Repository: `DEVUNLIMIT/supernova-mobile`
+- Project: `https://github.com/orgs/DEVUNLIMIT/projects/5`
+
 ## Routing
 
 - For transcript interpretation, Markdown structure, and PDF content, read [references/minutes-schema.md](references/minutes-schema.md).

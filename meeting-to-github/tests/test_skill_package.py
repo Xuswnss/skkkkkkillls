@@ -37,6 +37,26 @@ class SkillPackageTests(unittest.TestCase):
         self.assertIn("## 하위 이슈", schema)
         self.assertIn("기존 이슈 검색", schema)
 
+    def test_default_github_targets_are_defined(self):
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        schema = (ROOT / "references/github-issue-schema.md").read_text(encoding="utf-8")
+        for target in (
+            "DEVUNLIMIT/supernova-mobile",
+            "https://github.com/orgs/DEVUNLIMIT/projects/5",
+        ):
+            self.assertIn(target, skill)
+            self.assertIn(target, schema)
+
+    def test_relationships_require_explicit_approval_before_linking(self):
+        rules = (ROOT / "references/approval-and-relationship-rules.md").read_text(encoding="utf-8")
+        self.assertIn("관계 연결 전에는 항상 사용자의 명시적 승인을 받는다", rules)
+        self.assertIn("답을 받기 전에는 독립 Task 상태를 유지한다", rules)
+
+    def test_issue_schema_forbids_guessing_mutation_fields(self):
+        schema = (ROOT / "references/github-issue-schema.md").read_text(encoding="utf-8")
+        self.assertIn("담당자, 기한, 라벨, 프로젝트 필드를 추측하지 않는다", schema)
+        self.assertIn("질문 대상으로 표시하거나 미설정으로 둔다", schema)
+
 
 if __name__ == "__main__":
     unittest.main()
