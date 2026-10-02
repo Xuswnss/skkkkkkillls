@@ -8,6 +8,8 @@
 
 **Tech Stack:** Markdown, YAML, Python 3 표준 라이브러리, `unittest`, HTML/CSS, Codex skill validator, GitHub CLI 또는 GitHub 도구
 
+> **Final-review amendment (2026-10-02):** Manifest schema 2.0 supersedes the 1.0 examples in Tasks 3–4. It adds immutable approval fingerprints for Markdown/PDF/task candidates/bundles, explicit trusted local artifact byte verification, type-specific functional relationship claims, assignee-mapping provenance, live preflight snapshots, a one-to-one ordered operation ledger, typed target-repository results, and a timestamp-ordered `retry-ready` validation mode. The operational contract is defined by the current references, scripts, and tests.
+
 ## Global Constraints
 
 - 스킬 이름과 폴더 이름은 `meeting-to-github`다.

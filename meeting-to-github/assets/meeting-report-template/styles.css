@@ -9,7 +9,13 @@
 
 @page {
   size: A4;
-  margin: 18mm 16mm 16mm;
+  margin: 18mm 16mm 20mm;
+
+  @bottom-center {
+    color: #60758a;
+    content: "Page " counter(page) " / " counter(pages);
+    font-size: 8.5pt;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -52,7 +58,7 @@ h3 { font-size: 12pt; margin-bottom: 2mm; }
 .meeting-metadata dd { margin: 0; }
 
 .meeting-section { break-before: auto; margin-top: 12mm; }
-.meeting-section, .card, table, .callout { break-inside: avoid; }
+.card, .callout, .metric { break-inside: avoid; }
 
 .metric-grid { display: grid; gap: 4mm; grid-template-columns: repeat(3, 1fr); }
 .metric, .card, .callout { border: 1px solid var(--line); padding: 5mm; }
@@ -60,6 +66,8 @@ h3 { font-size: 12pt; margin-bottom: 2mm; }
 .decision-card { border-left: 4px solid var(--accent); }
 
 table { border-collapse: collapse; width: 100%; }
+thead { display: table-header-group; }
+tfoot { display: table-footer-group; }
 th, td { border: 1px solid var(--line); padding: 3mm; text-align: left; vertical-align: top; }
 th { background: var(--surface); }
 tr { break-inside: avoid; }

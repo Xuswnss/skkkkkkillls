@@ -388,26 +388,29 @@ GitHub mutations remain explicit tool operations so the agent can show a precise
 
 ## 11. Task Manifest
 
-The Markdown record is human-facing. A separate machine-readable manifest supports validation and retry safety.
+The Markdown record is human-facing. A separate machine-readable schema 2.0 manifest binds approvals to exact content, validates mutation preflight state, and supports retry safety without performing GitHub writes.
 
 Minimum logical fields:
 
 ```yaml
+schema_version: "2.0"
 meeting_id: 2026-09-28
 source_record: approved-markdown-path
-pdf: approved-pdf-path-or-accessible-url
+pdf: approved-local-pdf-path
 tasks:
   - local_id: T06
     title: "..."
     topic: "..."
     owner_name: null
     owner_github: null
+    assignee_mapping_provenance: null
     due_date: null
     outcome: "..."
-    completion_criteria: []
-    verification: []
+    completion_criteria: ["observable completion criterion"]
+    verification: ["concrete test or review procedure"]
     evidence:
       - timestamp: "09:38-10:55"
+        quote: "..."
     relationship:
       proposed_parent: null
       basis: null
@@ -416,9 +419,58 @@ tasks:
       issue_number: null
       url: null
       project_item_id: null
+bundle:
+  repository: DEVUNLIMIT/supernova-mobile
+  project_url: https://github.com/orgs/DEVUNLIMIT/projects/5
+  parent: {action: create, title: "...", body: "..."}
+  task_local_ids: [T06]
+  subissues:
+    - {local_id: T06, title: "...", body: "..."}
+  references: []
+  operations:
+    - {operation_id: op-01, kind: create_parent, local_id: null, depends_on: []}
+    - {operation_id: op-02, kind: create_subissue, local_id: T06, depends_on: [op-01]}
+    - {operation_id: op-03, kind: link_subissue, local_id: T06, depends_on: [op-01, op-02]}
+    - {operation_id: op-04, kind: add_to_project, local_id: T06, depends_on: [op-02, op-03]}
+approval_records:
+  source_record: {artifact: approved-markdown-path, approved: true, approved_sha256: "...", current_sha256: "...", approved_by: "...", approved_at: "..."}
+  pdf: {artifact: approved-local-pdf-path, approved: true, approved_sha256: "...", current_sha256: "...", approved_by: "...", approved_at: "..."}
+  task_candidates: {artifact: tasks.json, approved: true, approved_sha256: "...", current_sha256: "...", approved_by: "...", approved_at: "..."}
+  bundle: {artifact: bundle.json, approved: true, approved_sha256: "...", current_sha256: "...", approved_by: "...", approved_at: "..."}
+preflight:
+  checked_at: "..."
+  auth_verified: true
+  repository_access_verified: true
+  project_access_verified: true
+  selected_parent: null
+operation_ledger:
+  - operation_id: op-01
+    kind: create_parent
+    depends_on: []
+    status: planned
+    duplicate_search_at: "..."
+  - operation_id: op-02
+    kind: create_subissue
+    local_id: T06
+    depends_on: [op-01]
+    status: planned
+    duplicate_search_at: "..."
+  - operation_id: op-03
+    kind: link_subissue
+    local_id: T06
+    depends_on: [op-01, op-02]
+    status: planned
+  - operation_id: op-04
+    kind: add_to_project
+    local_id: T06
+    depends_on: [op-02, op-03]
+    status: planned
+retry_approval: null
 ```
 
-Validation rejects a mutation plan when a relationship is unapproved, an assignee is invented, a required field is missing, or a local task maps to multiple newly created issues without explicit approval.
+Relationship bases are typed functional claims with type-specific fields for both sides of the functional relationship plus a source locator and nonblank quote; dates, deadlines, owners, same-meeting membership, co-discussion, similar words, and local-ID order are invalid. A GitHub assignee requires matching user-confirmed mapping provenance. Mutation-ready validation requires nonblank completion and verification data, all four immutable approval records, verified authentication/repository/project access, a fresh parent snapshot, a one-to-one operation ledger whose plan projection exactly matches the approved bundle, typed target-repository success results, and a duplicate-search timestamp before each create. Retry-ready validation parses timezone-aware ledger timestamps and requires reconciliation after all outcomes, dependency-aware stop state, unresolved-only scope, fresh duplicate searches, and renewed narrow approval after reconciliation and all unresolved-create searches.
+
+A local PDF path is an approved local artifact locator only. It is never represented as an accessible GitHub attachment unless a separate approved upload or publication produces an accessible URL. Mutation validation receives the top-level workflow-selected or workflow-produced Markdown and PDF paths explicitly, requires both files to exist, and verifies their current bytes against the approval hashes. It never loads a path or URL from evidence or issue content.
 
 ## 12. Validation Strategy
 
@@ -449,6 +501,15 @@ Validation rejects a mutation plan when a relationship is unapproved, an assigne
 - changed parent state between preview and write;
 - missing project permission;
 - missing assignee mapping.
+- changed Markdown, PDF, task-candidate, or bundle fingerprint;
+- closed-parent reuse or reopen without explicit action approval;
+- failed operation with dependent operations left unattempted;
+- retry scope that includes an already successful operation.
+- approved task missing or duplicating its project-add operation;
+- trusted local Markdown or PDF bytes changed after approval;
+- allowed relationship type with no type-specific functional claim;
+- retry approval older than an unresolved-create duplicate search;
+- successful issue result whose URL is not the configured repository URL for its recorded issue number.
 
 ### PDF verification
 

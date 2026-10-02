@@ -6,13 +6,19 @@ import json
 import sys
 
 
-def build_manifest(meeting_id, source_record, pdf, tasks):
+def build_manifest(meeting_id, source_record, pdf, tasks, context=None):
+    context = deepcopy(context or {})
     return {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "meeting_id": meeting_id,
         "source_record": source_record,
         "pdf": pdf,
         "tasks": deepcopy(tasks),
+        "bundle": context.get("bundle"),
+        "approval_records": context.get("approval_records", {}),
+        "preflight": context.get("preflight", {}),
+        "operation_ledger": context.get("operation_ledger", []),
+        "retry_approval": context.get("retry_approval"),
     }
 
 
@@ -27,12 +33,17 @@ def main():
     parser.add_argument(
         "--pdf",
         default=None,
-        help="approved PDF path or accessible URL",
+        help="approved local PDF path",
     )
     parser.add_argument(
         "--tasks",
         required=True,
         help="task candidate JSON array file",
+    )
+    parser.add_argument(
+        "--context",
+        default=None,
+        help="workflow context JSON object file",
     )
     parser.add_argument(
         "--output",
@@ -44,6 +55,11 @@ def main():
     try:
         with open(args.tasks, encoding="utf-8") as tasks_file:
             tasks = json.load(tasks_file)
+        if args.context:
+            with open(args.context, encoding="utf-8") as context_file:
+                context = json.load(context_file)
+        else:
+            context = {}
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         print(f"input error: {exc}", file=sys.stderr)
         return 2
@@ -51,8 +67,17 @@ def main():
     if not isinstance(tasks, list):
         print("input error: tasks must be a JSON array", file=sys.stderr)
         return 2
+    if not isinstance(context, dict):
+        print("input error: context must be a JSON object", file=sys.stderr)
+        return 2
 
-    manifest = build_manifest(args.meeting_id, args.source_record, args.pdf, tasks)
+    manifest = build_manifest(
+        args.meeting_id,
+        args.source_record,
+        args.pdf,
+        tasks,
+        context=context,
+    )
     try:
         with open(args.output, "w", encoding="utf-8") as output_file:
             json.dump(manifest, output_file, ensure_ascii=False, indent=2)
