@@ -15,5 +15,8 @@
 ## PDF
 - 승인된 Markdown만 사용한다.
 - 고정 페이지 수를 강제하지 않는다.
-- 모든 페이지를 PNG로 렌더링해 잘림, 겹침, 한글 글리프, 표 overflow를 확인한다.
-- 수정은 Markdown 원본부터 반영한 뒤 PDF를 다시 만든다.
+- 승인된 Markdown을 semantic HTML로 변환한다.
+- `assets/meeting-report-template`의 template style을 semantic HTML에 적용해 PDF를 출력한다.
+- PDF의 모든 페이지를 PNG로 렌더링한다.
+- PNG 전체를 시각 검수해 잘림, 겹침, 한글 글리프, 표 overflow를 확인한다.
+- 수정이 필요하면 Markdown 원본부터 수정하고 semantic HTML, template style, PDF, PNG 렌더링과 시각 검수를 다시 수행한다.

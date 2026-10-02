@@ -1,0 +1,82 @@
+:root {
+  --ink: #0b2e4f;
+  --muted: #60758a;
+  --accent: #2d75ad;
+  --line: #cfe1f1;
+  --surface: #eef5fa;
+  --page: #ffffff;
+}
+
+@page {
+  size: A4;
+  margin: 18mm 16mm 16mm;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  color: var(--ink);
+  background: var(--page);
+  font-family: "Pretendard", "Noto Sans KR", sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.6;
+}
+
+main { max-width: 178mm; margin: 0 auto; }
+
+h1, h2, h3, p { margin-top: 0; }
+h1 { font-size: 28pt; line-height: 1.25; }
+h2 { border-bottom: 2px solid var(--accent); font-size: 16pt; padding-bottom: 3mm; }
+h3 { font-size: 12pt; margin-bottom: 2mm; }
+
+.meeting-cover {
+  break-before: page;
+  display: grid;
+  align-content: center;
+  min-height: 230mm;
+  padding: 12mm;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.eyebrow, .card-label, .source-note { color: var(--muted); font-size: 9pt; }
+
+.meeting-metadata {
+  display: grid;
+  gap: 2mm;
+  margin: 8mm 0 0;
+}
+
+.meeting-metadata div { display: grid; grid-template-columns: 28mm 1fr; }
+.meeting-metadata dt { color: var(--muted); }
+.meeting-metadata dd { margin: 0; }
+
+.meeting-section { break-before: auto; margin-top: 12mm; }
+.meeting-section, .card, table, .callout { break-inside: avoid; }
+
+.metric-grid { display: grid; gap: 4mm; grid-template-columns: repeat(3, 1fr); }
+.metric, .card, .callout { border: 1px solid var(--line); padding: 5mm; }
+.metric { background: var(--surface); }
+.decision-card { border-left: 4px solid var(--accent); }
+
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid var(--line); padding: 3mm; text-align: left; vertical-align: top; }
+th { background: var(--surface); }
+tr { break-inside: avoid; }
+
+.timeline { margin: 0; padding-left: 6mm; }
+.timeline li { margin-bottom: 3mm; padding-left: 3mm; }
+.timeline time { color: var(--accent); font-weight: 700; margin-right: 3mm; }
+
+.open-questions { break-before: auto; }
+.callout { background: var(--surface); }
+
+.report-footer { color: var(--muted); font-size: 8.5pt; margin-top: 8mm; text-align: center; }
+
+@media print {
+  .meeting-section:first-of-type { break-before: page; }
+}
+
+@media screen and (max-width: 700px) {
+  .metric-grid { grid-template-columns: 1fr; }
+}

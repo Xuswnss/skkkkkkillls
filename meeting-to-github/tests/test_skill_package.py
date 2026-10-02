@@ -57,6 +57,15 @@ class SkillPackageTests(unittest.TestCase):
         self.assertIn("담당자, 기한, 라벨, 프로젝트 필드를 추측하지 않는다", schema)
         self.assertIn("질문 대상으로 표시하거나 미설정으로 둔다", schema)
 
+    def test_report_template_has_required_semantics(self):
+        html = (ROOT / "assets/meeting-report-template/template.html").read_text(encoding="utf-8")
+        css = (ROOT / "assets/meeting-report-template/styles.css").read_text(encoding="utf-8")
+        for token in ("<main", "meeting-cover", "meeting-section", "open-questions"):
+            self.assertIn(token, html)
+        self.assertIn("@page", css)
+        self.assertIn("size: A4", css)
+        self.assertIn("break-inside: avoid", css)
+
 
 if __name__ == "__main__":
     unittest.main()
