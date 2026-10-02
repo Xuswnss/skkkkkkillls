@@ -119,6 +119,154 @@ class BuildManifestTests(unittest.TestCase):
                 json.loads(output_path.read_text(encoding="utf-8")),
             )
 
+    def test_cli_help_explains_inputs_and_output(self):
+        script = ROOT / "scripts" / "build_task_manifest.py"
+
+        result = subprocess.run(
+            [sys.executable, str(script), "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        for explanation in (
+            "meeting identifier",
+            "approved Markdown meeting record path",
+            "approved PDF path or accessible URL",
+            "task candidate JSON array file",
+            "output manifest JSON file",
+        ):
+            self.assertIn(explanation, result.stdout)
+
+    def test_cli_reports_missing_tasks_file_without_traceback(self):
+        script = ROOT / "scripts" / "build_task_manifest.py"
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            missing_tasks = directory / "missing.json"
+            output_path = directory / "manifest.json"
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--meeting-id",
+                    "2026-09-28",
+                    "--source-record",
+                    "minutes.md",
+                    "--tasks",
+                    str(missing_tasks),
+                    "--output",
+                    str(output_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertFalse(output_path.exists())
+
+        self.assertEqual(2, result.returncode)
+        self.assertEqual("", result.stdout)
+        self.assertIn("input error:", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_cli_reports_malformed_tasks_json_without_traceback(self):
+        script = ROOT / "scripts" / "build_task_manifest.py"
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            tasks_path = directory / "tasks.json"
+            output_path = directory / "manifest.json"
+            tasks_path.write_text("{", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--meeting-id",
+                    "2026-09-28",
+                    "--source-record",
+                    "minutes.md",
+                    "--tasks",
+                    str(tasks_path),
+                    "--output",
+                    str(output_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertFalse(output_path.exists())
+
+        self.assertEqual(2, result.returncode)
+        self.assertEqual("", result.stdout)
+        self.assertIn("input error:", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_cli_rejects_tasks_json_that_is_not_an_array(self):
+        script = ROOT / "scripts" / "build_task_manifest.py"
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            tasks_path = directory / "tasks.json"
+            output_path = directory / "manifest.json"
+            tasks_path.write_text('{"title": "not an array"}', encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--meeting-id",
+                    "2026-09-28",
+                    "--source-record",
+                    "minutes.md",
+                    "--tasks",
+                    str(tasks_path),
+                    "--output",
+                    str(output_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertFalse(output_path.exists())
+
+        self.assertEqual(2, result.returncode)
+        self.assertEqual("", result.stdout)
+        self.assertIn("input error: tasks must be a JSON array", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_cli_reports_output_file_error_without_traceback(self):
+        script = ROOT / "scripts" / "build_task_manifest.py"
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            tasks_path = directory / "tasks.json"
+            tasks_path.write_text("[]", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--meeting-id",
+                    "2026-09-28",
+                    "--source-record",
+                    "minutes.md",
+                    "--tasks",
+                    str(tasks_path),
+                    "--output",
+                    str(directory),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(2, result.returncode)
+        self.assertEqual("", result.stdout)
+        self.assertIn("output error:", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
 
 class ValidateManifestTests(unittest.TestCase):
     def setUp(self):
