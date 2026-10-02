@@ -25,6 +25,10 @@ class SkillPackageTests(unittest.TestCase):
         ):
             self.assertIn(name, body)
 
+    def test_default_prompt_explicitly_invokes_the_skill(self):
+        metadata = (ROOT / "agents/openai.yaml").read_text(encoding="utf-8")
+        self.assertIn("$meeting-to-github", metadata)
+
     def test_reference_boundaries_are_explicit(self):
         rules = (ROOT / "references/approval-and-relationship-rules.md").read_text(encoding="utf-8")
         self.assertIn("날짜는 관계 근거가 아니다", rules)
@@ -56,6 +60,11 @@ class SkillPackageTests(unittest.TestCase):
         schema = (ROOT / "references/github-issue-schema.md").read_text(encoding="utf-8")
         self.assertIn("담당자, 기한, 라벨, 프로젝트 필드를 추측하지 않는다", schema)
         self.assertIn("질문 대상으로 표시하거나 미설정으로 둔다", schema)
+
+    def test_final_reconciliation_reports_urls_and_local_id_mapping(self):
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("created or linked issue URL", skill)
+        self.assertIn("local-ID-to-GitHub-issue mapping", skill)
 
     def test_report_template_has_required_semantics(self):
         html = (ROOT / "assets/meeting-report-template/template.html").read_text(encoding="utf-8")
