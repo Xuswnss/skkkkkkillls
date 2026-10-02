@@ -18,6 +18,29 @@ def load_script(name):
     return module
 
 
+def sample_manifest():
+    return {
+        "schema_version": "1.0",
+        "meeting_id": "2026-09-28",
+        "source_record": "minutes.md",
+        "pdf": "minutes.pdf",
+        "tasks": [{
+            "local_id": "T06",
+            "title": "K-pop 영상 파이프라인 구축",
+            "topic": "콘텐츠",
+            "owner_name": None,
+            "owner_github": None,
+            "due_date": None,
+            "outcome": "반복 가능한 영상 생성 공정",
+            "completion_criteria": ["샘플 영상 생성과 검수 완료"],
+            "verification": ["승인된 샘플을 재생해 영상과 배경을 확인"],
+            "evidence": [{"timestamp": "09:38-10:55"}],
+            "relationship": {"proposed_parent": None, "basis": None, "approved": False},
+            "github": {"issue_number": None, "url": None, "project_item_id": None},
+        }],
+    }
+
+
 class BuildManifestTests(unittest.TestCase):
     def test_builds_normalized_manifest_without_inventing_values(self):
         module = load_script("build_task_manifest.py")
@@ -95,6 +118,33 @@ class BuildManifestTests(unittest.TestCase):
                 },
                 json.loads(output_path.read_text(encoding="utf-8")),
             )
+
+
+class ValidateManifestTests(unittest.TestCase):
+    def setUp(self):
+        self.module = load_script("validate_task_manifest.py")
+
+    def test_rejects_unapproved_parent_for_mutation(self):
+        manifest = sample_manifest()
+        manifest["tasks"][0]["relationship"] = {
+            "proposed_parent": 448,
+            "basis": "같은 날짜",
+            "approved": False,
+        }
+        errors = self.module.validate_manifest(manifest, mode="mutation-ready")
+        self.assertIn("T06: proposed parent is not approved", errors)
+
+    def test_rejects_github_owner_without_confirmed_name(self):
+        manifest = sample_manifest()
+        manifest["tasks"][0]["owner_github"] = "guessed-user"
+        errors = self.module.validate_manifest(manifest, mode="mutation-ready")
+        self.assertIn("T06: GitHub owner exists without a confirmed owner name", errors)
+
+    def test_rejects_duplicate_local_ids(self):
+        manifest = sample_manifest()
+        manifest["tasks"].append(dict(manifest["tasks"][0]))
+        errors = self.module.validate_manifest(manifest)
+        self.assertIn("duplicate local_id: T06", errors)
 
 
 if __name__ == "__main__":
