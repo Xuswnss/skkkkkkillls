@@ -1,0 +1,4 @@
+interface:
+  display_name: "Meeting to GitHub"
+  short_description: "회의 녹취를 승인된 회의록·PDF·GitHub Task로 전환"
+  default_prompt: "회의 녹취를 분석해 Markdown 초안을 만들고, 단계별 승인을 받은 뒤 기존 이슈를 우선 검토해 GitHub Task 등록안을 준비해 주세요."
