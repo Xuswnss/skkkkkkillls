@@ -8,7 +8,7 @@
 
 **Tech Stack:** Markdown, YAML, Python 3 표준 라이브러리, `unittest`, HTML/CSS, Codex skill validator, GitHub CLI 또는 GitHub 도구
 
-> **Final-review amendment (2026-10-02):** Manifest schema 2.0 supersedes the 1.0 examples in Tasks 3–4. It adds immutable approval fingerprints for Markdown/PDF/task candidates/bundles, explicit trusted local artifact byte verification, type-specific functional relationship claims, assignee-mapping provenance, live preflight snapshots, a one-to-one ordered operation ledger, typed target-repository results, and a timestamp-ordered `retry-ready` validation mode. The operational contract is defined by the current references, scripts, and tests.
+> **Final-review amendment (2026-10-02):** Manifest schema 2.0 supersedes the 1.0 examples in Tasks 3–4. It adds immutable approval fingerprints for Markdown/PDF/task candidates/bundles, explicit trusted local artifact byte verification, type-specific functional relationship claims, assignee-mapping provenance, live parent/resolved-sub-issue snapshots, a complete material operation-payload projection, typed duplicate-search decisions, exact-ledger final approval, a post-reconciliation access preflight, and a timestamp-ordered `retry-ready` validation mode. The report contract also requires a dedicated table-of-contents page and concise plain section labels. The operational contract is defined by the current references, scripts, and tests.
 
 ## Global Constraints
 

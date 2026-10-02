@@ -88,6 +88,29 @@ class SkillPackageTests(unittest.TestCase):
         self.assertNotRegex(css, r"\.meeting-section[^\n{]*\{[^}]*break-inside:\s*avoid")
         self.assertNotRegex(css, r"table[^\n{]*\{[^}]*break-inside:\s*avoid")
 
+    def test_report_template_has_toc_page_and_plain_major_headings(self):
+        html = (ROOT / "assets/meeting-report-template/template.html").read_text(encoding="utf-8")
+        css = (ROOT / "assets/meeting-report-template/styles.css").read_text(encoding="utf-8")
+        minutes = (ROOT / "references/minutes-schema.md").read_text(encoding="utf-8")
+
+        self.assertIn('class="table-of-contents"', html)
+        for target, label in (
+            ("summary-title", "핵심 요약"),
+            ("decisions-title", "결정 사항"),
+            ("tasks-title", "할 일"),
+            ("schedule-title", "일정"),
+            ("questions-title", "확인 필요"),
+        ):
+            self.assertIn(f'href="#{target}"', html)
+            self.assertIn(f">{label}</a>", html)
+            self.assertIn(f">{label}</h2>", html)
+        self.assertRegex(
+            css,
+            r"\.table-of-contents\s*\{[^}]*break-after:\s*page",
+        )
+        self.assertIn("concise, plain labels", minutes)
+        self.assertIn("not long sentence-style headings", minutes)
+
     def test_template_marks_every_inserted_value_for_html_escaping(self):
         html = (ROOT / "assets/meeting-report-template/template.html").read_text(encoding="utf-8")
         placeholders = re.findall(r"{{\s*(.*?)\s*}}", html)

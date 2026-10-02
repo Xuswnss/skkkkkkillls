@@ -3,9 +3,11 @@
 import argparse
 from datetime import datetime
 import hashlib
+import html
 import json
 import re
 import sys
+from urllib.parse import unquote
 
 
 _SCHEMA_VERSION = "2.0"
@@ -77,7 +79,27 @@ _LOCAL_ID_ONLY_QUOTE = re.compile(
     re.IGNORECASE,
 )
 _LOCAL_ID_ONLY_VALUE = re.compile(r"^\s*t\d+\s*$", re.IGNORECASE)
-_OPERATION_PLAN_KEYS = ("operation_id", "kind", "local_id", "depends_on")
+_RUNTIME_OPERATION_KEYS = {
+    "status",
+    "duplicate_search",
+    "recorded_at",
+    "result",
+    "error",
+}
+_MARKDOWN_DESTINATION = re.compile(
+    r"!?\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))",
+    re.IGNORECASE,
+)
+_HTML_RESOURCE = re.compile(
+    r"\b(?:href|src)\s*=\s*(?:[\"']([^\"']+)[\"']|([^\s>]+))",
+    re.IGNORECASE,
+)
+_EMBEDDED_LOCAL_PATH = re.compile(
+    r"(?<![\w/])(?:/(?:Users|home|tmp|private|var|etc|opt|mnt|Volumes|workspace|root|srv|data|app)/|"
+    r"(?:\.\.?|~)/|[A-Za-z]:[\\/]|\\\\)",
+)
+_ABSOLUTE_PATH_TOKEN = re.compile(r"(?<![\w:/])(/[^\s<>\"'`()]+)")
+_NORMAL_WEB_ROUTE = re.compile(r"^/(?:api(?:/|$)|v\d+(?:/|$)|graphql(?:/|$))", re.IGNORECASE)
 
 
 def _present(value):
@@ -178,6 +200,66 @@ def _parse_timestamp(value):
     return parsed
 
 
+def _positive_issue_number(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _decode_locator(value):
+    decoded = html.unescape(value.strip())
+    for _ in range(3):
+        next_value = unquote(decoded)
+        if next_value == decoded:
+            break
+        decoded = next_value
+    return decoded.strip().strip("<>").strip()
+
+
+def _is_local_locator(value):
+    candidate = _decode_locator(value)
+    lowered = candidate.casefold()
+    return (
+        lowered.startswith("file:")
+        or (candidate.startswith("/") and not candidate.startswith("//"))
+        or candidate.startswith(("./", "../", "~/", "\\\\"))
+        or bool(re.match(r"^[A-Za-z]:[\\/]", candidate))
+    )
+
+
+def _contains_local_reference(value):
+    if isinstance(value, dict):
+        return any(
+            _contains_local_reference(key) or _contains_local_reference(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_local_reference(item) for item in value)
+    if not isinstance(value, str):
+        return False
+
+    decoded = html.unescape(value)
+    for _ in range(3):
+        next_value = unquote(decoded)
+        if next_value == decoded:
+            break
+        decoded = next_value
+    if "file:" in decoded.casefold() or _EMBEDDED_LOCAL_PATH.search(decoded):
+        return True
+    if any(
+        not _NORMAL_WEB_ROUTE.match(match.group(1))
+        for match in _ABSOLUTE_PATH_TOKEN.finditer(decoded)
+    ):
+        return True
+    if _is_local_locator(decoded):
+        return True
+    for match in _MARKDOWN_DESTINATION.finditer(decoded):
+        if _is_local_locator(match.group(1) or match.group(2)):
+            return True
+    for match in _HTML_RESOURCE.finditer(decoded):
+        if _is_local_locator(match.group(1) or match.group(2)):
+            return True
+    return False
+
+
 def _validate_shape(manifest):
     if not isinstance(manifest, dict):
         raise TypeError("manifest must be a JSON object")
@@ -192,10 +274,11 @@ def _validate_shape(manifest):
         raise TypeError("bundle must be a JSON object or null")
     if "operation_ledger" in manifest and not isinstance(manifest["operation_ledger"], list):
         raise TypeError("operation_ledger must be a JSON array")
-    if "retry_approval" in manifest and manifest["retry_approval"] is not None and not isinstance(
-        manifest["retry_approval"], dict
-    ):
-        raise TypeError("retry_approval must be a JSON object or null")
+    for key in ("mutation_approval", "retry_approval"):
+        if key in manifest and manifest[key] is not None and not isinstance(
+            manifest[key], dict
+        ):
+            raise TypeError(f"{key} must be a JSON object or null")
     for task in manifest.get("tasks", []):
         if not isinstance(task, dict):
             raise TypeError("each task must be a JSON object")
@@ -222,19 +305,26 @@ def _validate_shape(manifest):
             isinstance(dependency, str) for dependency in dependencies
         ):
             raise TypeError("operation depends_on must be a string array")
-    retry = manifest.get("retry_approval")
-    if isinstance(retry, dict):
-        for key in (
-            "duplicate_search_operation_ids",
-            "unresolved_operation_ids",
-            "approved_operation_ids",
-        ):
-            value = retry.get(key)
-            if value is not None and (
-                not isinstance(value, list)
-                or not all(isinstance(operation_id, str) for operation_id in value)
-            ):
-                raise TypeError(f"retry_approval.{key} must be a string array")
+    for approval_name, keys in (
+        ("mutation_approval", ("approved_operation_ids",)),
+        (
+            "retry_approval",
+            (
+                "duplicate_search_operation_ids",
+                "unresolved_operation_ids",
+                "approved_operation_ids",
+            ),
+        ),
+    ):
+        approval = manifest.get(approval_name)
+        if isinstance(approval, dict):
+            for key in keys:
+                value = approval.get(key)
+                if value is not None and (
+                    not isinstance(value, list)
+                    or not all(isinstance(operation_id, str) for operation_id in value)
+                ):
+                    raise TypeError(f"{approval_name}.{key} must be a string array")
 
 
 def _validate_text_list(errors, value, *, local_id, required_message, invalid_message):
@@ -258,6 +348,9 @@ def _validate_relationship(errors, task, local_id, mode):
         if relationship.get("approved") is True:
             errors.append(f"{local_id}: parentless relationship cannot be approved")
         return
+
+    if parent != "bundle-parent" and not _positive_issue_number(parent):
+        errors.append(f"{local_id}: proposed parent must be bundle-parent or a positive issue number")
 
     if mode in _MUTATION_MODES and relationship.get("approved") is not True:
         errors.append(f"{local_id}: proposed parent is not approved")
@@ -362,9 +455,133 @@ def _plan_projection(operations):
     ):
         return None
     return [
-        {key: operation.get(key) for key in _OPERATION_PLAN_KEYS}
+        {
+            key: value
+            for key, value in operation.items()
+            if key not in _RUNTIME_OPERATION_KEYS
+        }
         for operation in operations
     ]
+
+
+def _valid_closed_issue_action(value, not_before=None):
+    approved_at = _parse_timestamp(value.get("approved_at")) if isinstance(value, dict) else None
+    return (
+        isinstance(value, dict)
+        and value.get("action") in {"reuse", "reopen"}
+        and value.get("approved") is True
+        and all(_present_text(value.get(key)) for key in ("approved_by", "approved_at"))
+        and approved_at is not None
+        and (not_before is None or approved_at >= not_before)
+    )
+
+
+def _validate_resolved_issue_snapshot(errors, operation, preflight_time):
+    operation_id = operation.get("operation_id")
+    snapshot = operation.get("existing_issue")
+    if not isinstance(snapshot, dict):
+        errors.append(f"{operation_id}: resolved issue requires a current-state snapshot")
+        return
+
+    issue_number = snapshot.get("issue_number")
+    if not _positive_issue_number(issue_number):
+        errors.append(f"{operation_id}: resolved issue_number must be a positive integer")
+    expected_url = (
+        "https://github.com/DEVUNLIMIT/supernova-mobile/issues/"
+        f"{issue_number}"
+    )
+    if not _positive_issue_number(issue_number) or snapshot.get("issue_url") != expected_url:
+        errors.append(f"{operation_id}: resolved issue URL must match the configured repository")
+
+    required = (
+        "approved_state",
+        "current_state",
+        "approved_updated_at",
+        "current_updated_at",
+        "approved_content_sha256",
+        "current_content_sha256",
+    )
+    checked_at = _parse_timestamp(snapshot.get("checked_at"))
+    if (
+        not all(_present_text(snapshot.get(key)) for key in required)
+        or snapshot.get("approved_state") not in {"open", "closed"}
+        or snapshot.get("current_state") not in {"open", "closed"}
+        or checked_at is None
+    ):
+        errors.append(f"{operation_id}: resolved issue current-state snapshot is incomplete")
+        return
+    if preflight_time is not None and checked_at < preflight_time:
+        errors.append(f"{operation_id}: resolved issue snapshot is older than the current preflight")
+    if (
+        snapshot.get("approved_state") != snapshot.get("current_state")
+        or snapshot.get("approved_updated_at") != snapshot.get("current_updated_at")
+        or snapshot.get("approved_content_sha256") != snapshot.get("current_content_sha256")
+        or not _SHA256.fullmatch(snapshot.get("approved_content_sha256", ""))
+        or not _SHA256.fullmatch(snapshot.get("current_content_sha256", ""))
+    ):
+        errors.append(f"{operation_id}: resolved issue changed; approval is stale")
+    if snapshot.get("current_state") == "closed" and not _valid_closed_issue_action(
+        snapshot.get("closed_issue_action"), checked_at
+    ):
+        errors.append(
+            f"{operation_id}: closed resolved issue requires explicit reuse or reopen approval"
+        )
+
+
+def _validate_operation_payload(errors, bundle, operation, subissue_by_id):
+    operation_id = operation.get("operation_id")
+    kind = operation.get("kind")
+    local_id = operation.get("local_id")
+    parent = bundle.get("parent") or {}
+    subissue = subissue_by_id.get(local_id) or {}
+    repository = bundle.get("repository")
+    expected = None
+    if kind == "create_parent":
+        expected = {
+            "repository": repository,
+            "title": parent.get("title"),
+            "body": parent.get("body"),
+            "assignees": parent.get("assignees", []),
+            "labels": parent.get("labels", []),
+        }
+    elif kind == "resolve_parent":
+        expected = {
+            "repository": repository,
+            "issue_number": parent.get("issue_number"),
+        }
+    elif kind == "create_subissue":
+        expected = {
+            "repository": repository,
+            "title": subissue.get("title"),
+            "body": subissue.get("body"),
+            "assignees": subissue.get("assignees", []),
+            "labels": subissue.get("labels", []),
+        }
+    elif kind == "resolve_subissue":
+        snapshot = operation.get("existing_issue") or {}
+        expected = {
+            "repository": repository,
+            "issue_number": snapshot.get("issue_number"),
+            "issue_url": snapshot.get("issue_url"),
+        }
+    elif kind == "link_subissue":
+        expected = {
+            "repository": repository,
+            "parent_ref": (
+                "bundle-parent"
+                if parent.get("action") == "create"
+                else parent.get("issue_number")
+            ),
+            "child_ref": local_id,
+        }
+    elif kind == "add_to_project":
+        expected = {
+            "project_url": bundle.get("project_url"),
+            "issue_ref": local_id,
+            "project_fields": subissue.get("project_fields", {}),
+        }
+    if expected is not None and operation.get("payload") != expected:
+        errors.append(f"{operation_id}: writable payload does not match approved bundle content")
 
 
 def _validate_bundle_binding(errors, manifest):
@@ -374,6 +591,10 @@ def _validate_bundle_binding(errors, manifest):
         errors.append("bundle repository must match the configured target")
     if bundle.get("project_url") != "https://github.com/orgs/DEVUNLIMIT/projects/5":
         errors.append("bundle project_url must match the configured target")
+    if _contains_local_reference(bundle):
+        errors.append("bundle: GitHub-facing content contains a local filesystem reference")
+    if _contains_local_reference(ledger):
+        errors.append("operation ledger: GitHub-facing content contains a local filesystem reference")
 
     parent = bundle.get("parent")
     if not isinstance(parent, dict) or not all(
@@ -400,6 +621,11 @@ def _validate_bundle_binding(errors, manifest):
         errors.append("bundle subissues must be a JSON object array")
         subissues = []
     subissue_ids = [item.get("local_id") for item in subissues]
+    bundle_subissue_by_id = {
+        item.get("local_id"): item
+        for item in subissues
+        if _present_text(item.get("local_id"))
+    }
     if (
         len(subissue_ids) != len(set(item for item in subissue_ids if isinstance(item, str)))
         or set(item for item in subissue_ids if isinstance(item, str)) != approved_task_ids
@@ -411,6 +637,26 @@ def _validate_bundle_binding(errors, manifest):
             errors.append("bundle subissue requires nonblank local_id, title, and body")
         elif local_id in task_by_id and subissue.get("title") != task_by_id[local_id].get("title"):
             errors.append(f"{local_id}: bundle subissue title does not match approved task")
+        if local_id in task_by_id:
+            expected_assignees = (
+                [task_by_id[local_id].get("owner_github")]
+                if _present_text(task_by_id[local_id].get("owner_github"))
+                else []
+            )
+            if subissue.get("assignees", []) != expected_assignees:
+                errors.append(f"{local_id}: bundle assignees do not match approved task owner")
+        for list_field in ("assignees", "labels"):
+            value = subissue.get(list_field, [])
+            if not isinstance(value, list) or any(not _present_text(item) for item in value):
+                errors.append(f"{local_id}: bundle {list_field} must contain nonblank text")
+        if not isinstance(subissue.get("project_fields", {}), dict):
+            errors.append(f"{local_id}: bundle project_fields must be an object")
+
+    if isinstance(parent, dict):
+        for list_field in ("assignees", "labels"):
+            value = parent.get(list_field, [])
+            if not isinstance(value, list) or any(not _present_text(item) for item in value):
+                errors.append(f"bundle parent {list_field} must contain nonblank text")
 
     references = bundle.get("references")
     if not isinstance(references, list):
@@ -438,8 +684,11 @@ def _validate_bundle_binding(errors, manifest):
     ledger_plan = _plan_projection(ledger)
     if approved_plan is None or ledger_plan is None or approved_plan != ledger_plan:
         errors.append("operation ledger does not match the approved bundle operation plan")
+        errors.append("operation ledger material payload does not match the approved bundle")
 
     parent_action = parent.get("action") if isinstance(parent, dict) else None
+    if parent_action == "select" and not _positive_issue_number(parent.get("issue_number")):
+        errors.append("bundle selected parent issue_number must be a positive integer")
     parent_kind = {"create": "create_parent", "select": "resolve_parent"}.get(parent_action)
     parent_operations = [
         operation
@@ -474,6 +723,7 @@ def _validate_bundle_binding(errors, manifest):
     subissue_by_task = {}
     link_by_task = {}
     project_by_task = {}
+    preflight_time = _parse_timestamp((manifest.get("preflight") or {}).get("checked_at"))
     for operation in ledger:
         if not isinstance(operation, dict):
             continue
@@ -487,6 +737,9 @@ def _validate_bundle_binding(errors, manifest):
         if kind in {"create_subissue", "resolve_subissue", "link_subissue", "add_to_project"}:
             if local_id is not None and local_id not in approved_task_ids:
                 errors.append(f"{operation_id}: operation targets a task outside the approved bundle")
+        _validate_operation_payload(errors, bundle, operation, bundle_subissue_by_id)
+        if kind == "resolve_subissue":
+            _validate_resolved_issue_snapshot(errors, operation, preflight_time)
         if kind in {"create_subissue", "resolve_subissue"} and local_id in approved_task_ids:
             subissue_by_task.setdefault(local_id, []).append(operation_id)
             if parent_id not in dependency_set:
@@ -514,13 +767,18 @@ def _validate_bundle_binding(errors, manifest):
 def _validate_selected_parent(errors, manifest):
     preflight = manifest.get("preflight") or {}
     parent = preflight.get("selected_parent")
+    bundle_parent = (manifest.get("bundle") or {}).get("parent") or {}
+    bundle_issue_number = bundle_parent.get("issue_number")
+    resolve_required = any(
+        isinstance(operation, dict) and operation.get("kind") == "resolve_parent"
+        for operation in manifest.get("operation_ledger", [])
+    )
     proposed_parents = {
         (task.get("relationship") or {}).get("proposed_parent")
         for task in manifest.get("tasks", [])
-        if isinstance((task.get("relationship") or {}).get("proposed_parent"), int)
-        and not isinstance((task.get("relationship") or {}).get("proposed_parent"), bool)
+        if _positive_issue_number((task.get("relationship") or {}).get("proposed_parent"))
     }
-    if proposed_parents and parent is None:
+    if resolve_required and parent is None:
         errors.append("preflight: selected parent was not re-read")
         return
     if parent is None:
@@ -528,6 +786,10 @@ def _validate_selected_parent(errors, manifest):
     if not isinstance(parent, dict):
         errors.append("preflight: selected parent snapshot is invalid")
         return
+    if not _positive_issue_number(parent.get("issue_number")):
+        errors.append("preflight: selected parent issue_number must be a positive integer")
+    if resolve_required and parent.get("issue_number") != bundle_issue_number:
+        errors.append("preflight: selected parent does not match the approved bundle")
     if parent.get("issue_number") not in proposed_parents and proposed_parents:
         errors.append("preflight: selected parent does not match approved relationships")
     required = (
@@ -550,12 +812,9 @@ def _validate_selected_parent(errors, manifest):
     ):
         errors.append("preflight: selected parent changed; approval is stale")
     if parent.get("current_state") == "closed":
-        action = parent.get("closed_issue_action")
-        if (
-            not isinstance(action, dict)
-            or action.get("action") not in {"reuse", "reopen"}
-            or action.get("approved") is not True
-            or not all(_present_text(action.get(key)) for key in ("approved_by", "approved_at"))
+        if not _valid_closed_issue_action(
+            parent.get("closed_issue_action"),
+            _parse_timestamp(preflight.get("checked_at")),
         ):
             errors.append("preflight: closed parent requires explicit reuse or reopen approval")
 
@@ -574,6 +833,89 @@ def _validate_preflight(errors, manifest):
     _validate_selected_parent(errors, manifest)
 
 
+def _validate_duplicate_search(errors, operation, mode, preflight_time):
+    operation_id = operation.get("operation_id")
+    search = operation.get("duplicate_search")
+    if not isinstance(search, dict):
+        errors.append(f"{operation_id}: duplicate search requires a typed outcome and decision")
+        errors.append(f"{operation_id}: create requires a fresh duplicate search")
+        return None
+
+    searched_at = _parse_timestamp(search.get("searched_at"))
+    outcome = search.get("outcome")
+    decision = search.get("decision")
+    matched_issue = search.get("matched_issue")
+    valid = searched_at is not None
+    if outcome == "no_match":
+        valid = valid and decision == "create" and matched_issue is None
+    elif outcome == "matched_existing":
+        valid = valid and decision == "reconcile_existing" and isinstance(matched_issue, dict)
+        if isinstance(matched_issue, dict):
+            issue_number = matched_issue.get("issue_number")
+            expected_url = (
+                "https://github.com/DEVUNLIMIT/supernova-mobile/issues/"
+                f"{issue_number}"
+            )
+            valid = (
+                valid
+                and _positive_issue_number(issue_number)
+                and matched_issue.get("issue_url") == expected_url
+                and matched_issue.get("state") in {"open", "closed"}
+            )
+        if operation.get("status") in {"planned", "failed", "unattempted"}:
+            errors.append(
+                f"{operation_id}: matched duplicate must be reconciled before any create retry"
+            )
+        elif operation.get("status") == "succeeded" and (
+            not isinstance(matched_issue, dict)
+            or not isinstance(operation.get("result"), dict)
+            or operation["result"].get("issue_number") != matched_issue.get("issue_number")
+            or operation["result"].get("issue_url") != matched_issue.get("issue_url")
+        ):
+            errors.append(
+                f"{operation_id}: matched duplicate mapping must match the recorded result"
+            )
+    else:
+        valid = False
+
+    if not valid:
+        errors.append(f"{operation_id}: duplicate search requires a typed outcome and decision")
+    if searched_at is None:
+        errors.append(f"{operation_id}: create requires a fresh duplicate search")
+    elif mode == "mutation-ready" and preflight_time is not None and searched_at < preflight_time:
+        errors.append(f"{operation_id}: duplicate search is older than the current preflight")
+    return searched_at
+
+
+def _validate_mutation_approval(errors, manifest, search_times):
+    approval = manifest.get("mutation_approval")
+    ledger = manifest.get("operation_ledger") or []
+    operation_ids = {
+        operation.get("operation_id")
+        for operation in ledger
+        if isinstance(operation, dict) and _present_text(operation.get("operation_id"))
+    }
+    if not isinstance(approval, dict):
+        errors.append("mutation: final approval must bind duplicate search decisions")
+        return
+    approved_at = _parse_timestamp(approval.get("approved_at"))
+    preflight_time = _parse_timestamp((manifest.get("preflight") or {}).get("checked_at"))
+    approved_operation_ids = approval.get("approved_operation_ids") or []
+    if (
+        approval.get("approved") is not True
+        or not _present_text(approval.get("approved_by"))
+        or approved_at is None
+        or set(approved_operation_ids) != operation_ids
+        or len(approved_operation_ids) != len(operation_ids)
+    ):
+        errors.append("mutation: final approval is incomplete or outside the exact operation scope")
+    if approval.get("approved_ledger_sha256") != _canonical_sha256(ledger):
+        errors.append("mutation: final approval must bind duplicate search decisions")
+    latest_required = [value for value in [preflight_time, *search_times] if value is not None]
+    if approved_at is not None and latest_required and approved_at < max(latest_required):
+        errors.append("mutation: final approval must follow preflight and duplicate searches")
+
+
 def _validate_operation_ledger(errors, manifest, mode):
     ledger = manifest.get("operation_ledger")
     if not isinstance(ledger, list) or not ledger:
@@ -583,6 +925,7 @@ def _validate_operation_ledger(errors, manifest, mode):
     ids = []
     by_id = {}
     ranks = []
+    search_times = []
     preflight_time = _parse_timestamp((manifest.get("preflight") or {}).get("checked_at"))
     for operation in ledger:
         operation_id = operation.get("operation_id")
@@ -608,11 +951,11 @@ def _validate_operation_ledger(errors, manifest, mode):
         if status not in _LEDGER_STATUSES:
             errors.append(f"{operation_id}: invalid ledger status")
         if kind in _CREATE_OPERATIONS:
-            search_time = _parse_timestamp(operation.get("duplicate_search_at"))
-            if search_time is None:
-                errors.append(f"{operation_id}: create requires a fresh duplicate search")
-            elif mode == "mutation-ready" and preflight_time is not None and search_time < preflight_time:
-                errors.append(f"{operation_id}: duplicate search is older than the current preflight")
+            search_time = _validate_duplicate_search(
+                errors, operation, mode, preflight_time
+            )
+            if search_time is not None:
+                search_times.append(search_time)
 
     if ranks != sorted(ranks):
         errors.append("operation ledger order must be parent, create/link subissues, then project")
@@ -627,6 +970,7 @@ def _validate_operation_ledger(errors, manifest, mode):
         for operation_id, operation in by_id.items():
             if operation.get("status") != "planned":
                 errors.append(f"{operation_id}: initial mutation operation must be planned")
+        _validate_mutation_approval(errors, manifest, search_times)
         return
 
     unresolved = set()
@@ -707,26 +1051,44 @@ def _validate_operation_ledger(errors, manifest, mode):
         errors.append("retry: fresh reconciliation is required")
     elif recorded_times and reconciled_at < max(recorded_times):
         errors.append("retry: reconciliation must follow all recorded outcomes")
-    if set(retry.get("duplicate_search_operation_ids") or []) != unresolved_creates:
+    duplicate_search_ids = retry.get("duplicate_search_operation_ids") or []
+    unresolved_ids = retry.get("unresolved_operation_ids") or []
+    approved_ids = retry.get("approved_operation_ids") or []
+    if (
+        set(duplicate_search_ids) != unresolved_creates
+        or len(duplicate_search_ids) != len(unresolved_creates)
+    ):
         errors.append("retry: every unresolved create requires a fresh duplicate search")
-    if set(retry.get("unresolved_operation_ids") or []) != unresolved:
+    if set(unresolved_ids) != unresolved or len(unresolved_ids) != len(unresolved):
         errors.append("retry: unresolved operation list must match the ledger")
-    if set(retry.get("approved_operation_ids") or []) != unresolved:
+    if set(approved_ids) != unresolved or len(approved_ids) != len(unresolved):
         errors.append("retry: approval must be limited to unresolved operations")
     unresolved_search_times = []
     if reconciled_at is not None:
         for operation_id in unresolved_creates:
-            search_time = _parse_timestamp(by_id[operation_id].get("duplicate_search_at"))
+            search = by_id[operation_id].get("duplicate_search")
+            search_time = _parse_timestamp(search.get("searched_at")) if isinstance(
+                search, dict
+            ) else None
             if search_time is None or search_time < reconciled_at:
                 errors.append(f"{operation_id}: retry duplicate search is older than reconciliation")
             else:
                 unresolved_search_times.append(search_time)
+    preflight_time = _parse_timestamp((manifest.get("preflight") or {}).get("checked_at"))
+    if (
+        reconciled_at is not None
+        and (preflight_time is None or preflight_time < reconciled_at)
+    ):
+        errors.append("retry: access preflight must follow reconciliation")
+    if retry.get("approved_ledger_sha256") != _canonical_sha256(ledger):
+        errors.append("retry: approval must bind duplicate search decisions")
     approved_at = _parse_timestamp(retry.get("approved_at"))
     if (
         retry.get("approved") is not True
         or not _present_text(retry.get("approved_by"))
         or approved_at is None
         or (reconciled_at is not None and approved_at < reconciled_at)
+        or (preflight_time is not None and approved_at < preflight_time)
     ):
         errors.append("retry: new narrowly scoped user approval is required")
     elif unresolved_search_times and approved_at < max(unresolved_search_times):

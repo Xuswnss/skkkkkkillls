@@ -17,7 +17,9 @@
 
 ## Markdown 순서
 
-표지 → 핵심 결론 → 실행축 → 안건별 분석 → 결정 → Task 전체 목록 → 담당자별 Task → 공동·미지정 Task → 일정 → 확인 필요 → 해석 기준.
+표지 → 목차 → 핵심 요약 → 실행 방향 → 안건 분석 → 결정 사항 → 할 일 → 담당자별 할 일 → 공동·미지정 할 일 → 일정 → 확인 필요 → 해석 기준.
+
+Major section headings use concise, plain labels such as `핵심 요약`, `결정 사항`, `할 일`, `일정`, and `확인 필요`, not long sentence-style headings. If the approved Markdown/PDF structure has no table-of-contents page, add one with entries for every major section before rendering.
 
 ## 승인 기록
 
@@ -28,6 +30,7 @@ Approval is content-specific, not filename-specific. From the top-level local ou
 - 승인된 Markdown만 사용한다.
 - 고정 페이지 수를 강제하지 않는다.
 - 승인된 Markdown을 semantic HTML로 변환한다.
+- Include a dedicated table-of-contents page and force a print page break after it.
 - HTML-escape every inserted value before it enters text, attribute, title, table, card, or footer markup.
 - `assets/meeting-report-template`의 template style을 semantic HTML에 적용해 PDF를 출력한다.
 - Long sections and whole tables may paginate; keep individual rows and compact cards intact where practical.

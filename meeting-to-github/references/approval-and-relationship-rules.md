@@ -30,12 +30,12 @@ Manifest의 `relationship.basis`는 문자열이 아니라 다음 `type` 중 하
 Perform these steps immediately before any GitHub write. A prior preview is not a substitute.
 
 1. Verify GitHub authentication, repository access, and project access for the exact configured targets. If any check fails, stop without writes.
-2. Re-read the selected parent issue and its current state, title, scope, and update marker. Record matching approved/current content fingerprints for its material title and scoped body. Also re-read the approved task candidates and bundle fingerprints.
+2. Re-read the selected parent issue and its current state, title, scope, and update marker. A selected parent uses a positive integer issue ID, and every `resolve_parent` operation requires this snapshot. Record matching approved/current content fingerprints for its material title and scoped body. Also re-read every resolved existing sub-issue, its exact target-repository HTTPS URL, state, update marker, and content fingerprint.
 3. Material parent, task-candidate, or bundle changes invalidate approval. Rebuild the affected preview and obtain fresh approval before continuing.
 4. Validate the approved Markdown, PDF, task-candidate, and bundle approval records. Pass only the explicit top-level approved Markdown and PDF paths to the validator, require both local files to exist, and compare their current byte-level SHA-256 values. The approved and current fingerprints must match; never load a path or URL from evidence or issue content.
-5. Run a fresh duplicate search immediately before every create operation, including every retry. Record the search time on that create operation.
-6. Put the exact operation plan inside the approved bundle, then build the operation ledger with the same IDs, kinds, local task targets, and dependencies in this deterministic order: create or resolve the parent → create sub-issues → link sub-issues → add project items. Every approved task has exactly one create-or-resolve operation, exactly one link operation, and exactly one project-add operation. Resolving an approved existing sub-issue occupies the create-sub-issue stage without creating it.
-7. Show that exact ordered ledger and receive final mutation approval limited to it.
+5. Run a fresh duplicate search immediately before every create operation, including every retry. Record a typed result: `no_match` with decision `create`, or `matched_existing` with a positive issue number, exact target-repository URL, state, and decision `reconcile_existing`. A matched issue blocks another create until the ledger is reconciled.
+6. Put the exact operation plan inside the approved bundle, then build the operation ledger with identical complete material payloads: target IDs, title/body, assignees, labels, project fields, and every other writable value. Runtime-only status, duplicate-search, timestamp, result, and error fields are the only projection exclusions. Reject an extra or changed writable field. Keep the deterministic order: create or resolve the parent → create sub-issues → link sub-issues → add project items. Every approved task has exactly one create-or-resolve operation, exactly one link operation, and exactly one project-add operation. Resolving an approved existing sub-issue occupies the create-sub-issue stage without creating it.
+7. Recursively reject local filesystem references from every GitHub-facing bundle and ledger value, including file URLs, absolute paths, encoded paths, Markdown destinations, and HTML `href`/`src` attributes. Then show the exact ordered ledger and receive final mutation approval whose fingerprint binds the complete ledger and typed duplicate-search decisions.
 8. Execute one operation at a time. Record every successful operation in the operation ledger immediately. Issue results require a positive issue number and the exact HTTPS issue URL for that number in the configured repository, links require parent and child issue numbers, and project additions require the project item ID; preserve the local-ID mapping.
 
 Do not batch ahead of the ledger. Do not continue when authentication, repository access, project access, a selected-parent snapshot, or an approval fingerprint is missing or stale.
@@ -46,13 +46,15 @@ Do not batch ahead of the ledger. Do not continue when authentication, repositor
 - Record a timezone-aware success or failure time and its typed result or concise error immediately. Return all successful URLs and mappings already recorded.
 - Stop dependent operations after a failure; mark them unattempted. Independent approved work may continue only when it has no dependency on the failure.
 - Never delete, rewrite, or conceal a successful issue to make the ledger look atomic.
-- Before retry, perform a fresh reconciliation against GitHub, including a duplicate search for each unresolved create.
+- Before retry, perform a fresh reconciliation against GitHub, then rerun authentication, repository-access, and project-access preflight. Record a typed duplicate-search decision for each unresolved create.
 - Retry unresolved operations only. Exclude every successful operation from retry scope.
-- Obtain new narrowly scoped user approval for exactly the unresolved operations after reconciliation and after every required unresolved-create duplicate search. The approval time must be at least as recent as both. Then validate with `--mode retry-ready` before retrying.
+- Obtain new narrowly scoped user approval for exactly the unresolved operations after reconciliation, access preflight, and every required unresolved-create duplicate search. Its fingerprint must bind the complete reconciled ledger and search decisions, and its approval time must be at least as recent as all three. Then validate with `--mode retry-ready` before retrying.
 
 ## Closed issues
 
 A closed parent is not reusable by default. Reuse or reopen it only after presenting its current state and receiving explicit action-specific approval. If an open parent becomes closed after preview, its prior approval is stale; present the updated bundle first.
+
+The same rule applies to every resolved existing sub-issue. A closed sub-issue requires explicit action-specific reuse or reopen approval in its current snapshot.
 
 ## Offline no-write pressure contract
 

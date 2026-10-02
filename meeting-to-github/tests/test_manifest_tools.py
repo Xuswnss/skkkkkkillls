@@ -97,24 +97,48 @@ def sample_manifest():
             "kind": "create_parent",
             "local_id": None,
             "depends_on": [],
+            "payload": {
+                "repository": "DEVUNLIMIT/supernova-mobile",
+                "title": "콘텐츠 파이프라인",
+                "body": "승인된 콘텐츠 파이프라인 작업 묶음",
+                "assignees": [],
+                "labels": [],
+            },
         },
         {
             "operation_id": "op-02",
             "kind": "create_subissue",
             "local_id": "T06",
             "depends_on": ["op-01"],
+            "payload": {
+                "repository": "DEVUNLIMIT/supernova-mobile",
+                "title": "K-pop 영상 파이프라인 구축",
+                "body": "반복 가능한 영상 생성 공정을 구축하고 승인된 절차로 검증한다.",
+                "assignees": [],
+                "labels": [],
+            },
         },
         {
             "operation_id": "op-03",
             "kind": "link_subissue",
             "local_id": "T06",
             "depends_on": ["op-01", "op-02"],
+            "payload": {
+                "repository": "DEVUNLIMIT/supernova-mobile",
+                "parent_ref": "bundle-parent",
+                "child_ref": "T06",
+            },
         },
         {
             "operation_id": "op-04",
             "kind": "add_to_project",
             "local_id": "T06",
             "depends_on": ["op-02", "op-03"],
+            "payload": {
+                "project_url": "https://github.com/orgs/DEVUNLIMIT/projects/5",
+                "issue_ref": "T06",
+                "project_fields": {},
+            },
         },
     ]
     bundle = {
@@ -123,6 +147,8 @@ def sample_manifest():
             "action": "create",
             "title": "콘텐츠 파이프라인",
             "body": "승인된 콘텐츠 파이프라인 작업 묶음",
+            "assignees": [],
+            "labels": [],
         },
         "project_url": "https://github.com/orgs/DEVUNLIMIT/projects/5",
         "task_local_ids": ["T06"],
@@ -130,13 +156,35 @@ def sample_manifest():
             "local_id": "T06",
             "title": "K-pop 영상 파이프라인 구축",
             "body": "반복 가능한 영상 생성 공정을 구축하고 승인된 절차로 검증한다.",
+            "assignees": [],
+            "labels": [],
+            "project_fields": {},
         }],
         "references": [],
         "operations": operation_plan,
     }
+    operation_ledger = [
+        dict(
+            deepcopy(operation),
+            status="planned",
+            **(
+                {
+                    "duplicate_search": {
+                        "searched_at": f"2026-10-02T09:05:{10 + index * 10:02d}+09:00",
+                        "outcome": "no_match",
+                        "decision": "create",
+                        "matched_issue": None,
+                    }
+                }
+                if operation["kind"].startswith("create_")
+                else {}
+            ),
+        )
+        for index, operation in enumerate(operation_plan)
+    ]
     task_fingerprint = canonical_sha256(tasks)
     bundle_fingerprint = canonical_sha256(bundle)
-    return {
+    manifest = {
         "schema_version": "2.0",
         "meeting_id": "2026-09-28",
         "source_record": str(APPROVED_MINUTES),
@@ -156,20 +204,17 @@ def sample_manifest():
             "project_access_verified": True,
             "selected_parent": None,
         },
-        "operation_ledger": [
-            dict(
-                deepcopy(operation),
-                status="planned",
-                **(
-                    {"duplicate_search_at": f"2026-10-02T09:05:{10 + index * 10:02d}+09:00"}
-                    if operation["kind"].startswith("create_")
-                    else {}
-                ),
-            )
-            for index, operation in enumerate(operation_plan)
-        ],
+        "operation_ledger": operation_ledger,
+        "mutation_approval": {
+            "approved": True,
+            "approved_by": "meeting owner",
+            "approved_at": "2026-10-02T09:06:00+09:00",
+            "approved_operation_ids": ["op-01", "op-02", "op-03", "op-04"],
+            "approved_ledger_sha256": canonical_sha256(operation_ledger),
+        },
         "retry_approval": None,
     }
+    return manifest
 
 
 def retry_manifest():
@@ -186,10 +231,16 @@ def retry_manifest():
         "status": "failed",
         "recorded_at": "2026-10-02T09:06:10+09:00",
         "error": "GitHub API timeout",
-        "duplicate_search_at": "2026-10-02T09:09:10+09:00",
+        "duplicate_search": {
+            "searched_at": "2026-10-02T09:09:10+09:00",
+            "outcome": "no_match",
+            "decision": "create",
+            "matched_issue": None,
+        },
     })
     manifest["operation_ledger"][2]["status"] = "unattempted"
     manifest["operation_ledger"][3]["status"] = "unattempted"
+    manifest["preflight"]["checked_at"] = "2026-10-02T09:09:05+09:00"
     manifest["retry_approval"] = {
         "reconciliation_completed": True,
         "reconciled_at": "2026-10-02T09:09:00+09:00",
@@ -199,6 +250,7 @@ def retry_manifest():
         "approved": True,
         "approved_by": "meeting owner",
         "approved_at": "2026-10-02T09:10:00+09:00",
+        "approved_ledger_sha256": canonical_sha256(manifest["operation_ledger"]),
     }
     return manifest
 
@@ -239,6 +291,7 @@ class BuildManifestTests(unittest.TestCase):
             "approval_records": {"source_record": approval_record("minutes.md", "a" * 64)},
             "preflight": {"auth_verified": True},
             "operation_ledger": [{"operation_id": "op-01"}],
+            "mutation_approval": {"approved": True},
             "retry_approval": None,
         }
 
@@ -249,6 +302,7 @@ class BuildManifestTests(unittest.TestCase):
 
         self.assertTrue(manifest["approval_records"]["source_record"]["approved"])
         self.assertEqual(["T06"], manifest["bundle"]["task_local_ids"])
+        self.assertTrue(manifest["mutation_approval"]["approved"])
 
     def test_build_manifest_deep_copies_tasks(self):
         module = load_script("build_task_manifest.py")
@@ -302,6 +356,7 @@ class BuildManifestTests(unittest.TestCase):
                     "approval_records": {},
                     "preflight": {},
                     "operation_ledger": [],
+                    "mutation_approval": None,
                     "retry_approval": None,
                 },
                 json.loads(output_path.read_text(encoding="utf-8")),
@@ -608,7 +663,19 @@ class ValidateManifestTests(unittest.TestCase):
         }
         manifest["bundle"]["operations"][0]["kind"] = "resolve_parent"
         manifest["operation_ledger"][0]["kind"] = "resolve_parent"
-        manifest["operation_ledger"][0].pop("duplicate_search_at")
+        resolved_parent_payload = {
+            "repository": "DEVUNLIMIT/supernova-mobile",
+            "issue_number": 448,
+        }
+        manifest["bundle"]["operations"][0]["payload"] = deepcopy(
+            resolved_parent_payload
+        )
+        manifest["operation_ledger"][0]["payload"] = deepcopy(
+            resolved_parent_payload
+        )
+        manifest["bundle"]["operations"][2]["payload"]["parent_ref"] = 448
+        manifest["operation_ledger"][2]["payload"]["parent_ref"] = 448
+        manifest["operation_ledger"][0].pop("duplicate_search")
         approved_fingerprint = canonical_sha256(manifest["tasks"])
         manifest["approval_records"]["task_candidates"].update({
             "approved_sha256": approved_fingerprint,
@@ -619,6 +686,9 @@ class ValidateManifestTests(unittest.TestCase):
             "approved_sha256": bundle_fingerprint,
             "current_sha256": bundle_fingerprint,
         })
+        manifest["mutation_approval"]["approved_ledger_sha256"] = canonical_sha256(
+            manifest["operation_ledger"]
+        )
 
         self.assertEqual([], self.module.validate_manifest(manifest, mode="mutation-ready"))
 
@@ -789,9 +859,35 @@ class ValidateManifestTests(unittest.TestCase):
 
         self.assertIn("preflight: closed parent requires explicit reuse or reopen approval", errors)
 
+    def test_rejects_string_selected_parent_and_requires_snapshot_for_resolve(self):
+        manifest = sample_manifest()
+        manifest["tasks"][0]["relationship"]["proposed_parent"] = "448"
+        manifest["bundle"]["parent"].update({
+            "action": "select",
+            "issue_number": "448",
+        })
+        manifest["bundle"]["operations"][0]["kind"] = "resolve_parent"
+        manifest["operation_ledger"][0]["kind"] = "resolve_parent"
+        manifest["operation_ledger"][0].pop("duplicate_search")
+        task_fingerprint = canonical_sha256(manifest["tasks"])
+        bundle_fingerprint = canonical_sha256(manifest["bundle"])
+        manifest["approval_records"]["task_candidates"].update({
+            "approved_sha256": task_fingerprint,
+            "current_sha256": task_fingerprint,
+        })
+        manifest["approval_records"]["bundle"].update({
+            "approved_sha256": bundle_fingerprint,
+            "current_sha256": bundle_fingerprint,
+        })
+
+        errors = self.module.validate_manifest(manifest, mode="mutation-ready")
+
+        self.assertIn("bundle selected parent issue_number must be a positive integer", errors)
+        self.assertIn("preflight: selected parent was not re-read", errors)
+
     def test_rejects_create_without_fresh_duplicate_search_and_wrong_operation_order(self):
         manifest = sample_manifest()
-        manifest["operation_ledger"][1].pop("duplicate_search_at")
+        manifest["operation_ledger"][1].pop("duplicate_search")
         manifest["operation_ledger"][2]["kind"] = "add_to_project"
         manifest["operation_ledger"][3]["kind"] = "link_subissue"
 
@@ -809,6 +905,97 @@ class ValidateManifestTests(unittest.TestCase):
 
         self.assertIn("operation ledger does not match the approved bundle operation plan", errors)
         self.assertIn("op-02: operation targets a task outside the approved bundle", errors)
+
+    def test_rejects_unapproved_material_operation_payload(self):
+        manifest = sample_manifest()
+        manifest["operation_ledger"][1].update({
+            "title": "Unapproved replacement title",
+            "body": "Unapproved replacement body",
+            "assignees": ["unapproved-user"],
+            "labels": ["unapproved-label"],
+            "project_fields": {"Status": "Done"},
+            "target_issue_number": 999,
+        })
+
+        errors = self.module.validate_manifest(manifest, mode="mutation-ready")
+
+        self.assertIn("operation ledger material payload does not match the approved bundle", errors)
+
+    def test_resolve_subissue_requires_verified_open_issue_snapshot(self):
+        manifest = sample_manifest()
+        existing_issue = {
+            "issue_number": "601",
+            "issue_url": "https://example.com/issues/601",
+            "approved_state": "closed",
+            "current_state": "closed",
+            "approved_updated_at": "2026-10-02T08:00:00Z",
+            "current_updated_at": "2026-10-02T08:00:00Z",
+            "approved_content_sha256": "e" * 64,
+            "current_content_sha256": "e" * 64,
+            "checked_at": "2026-10-02T09:05:15+09:00",
+            "closed_issue_action": None,
+        }
+        for operation in (
+            manifest["bundle"]["operations"][1],
+            manifest["operation_ledger"][1],
+        ):
+            operation["kind"] = "resolve_subissue"
+            operation["existing_issue"] = deepcopy(existing_issue)
+            operation["payload"] = {
+                "repository": "DEVUNLIMIT/supernova-mobile",
+                "issue_number": "601",
+                "issue_url": "https://example.com/issues/601",
+            }
+        manifest["operation_ledger"][1].pop("duplicate_search")
+        bundle_fingerprint = canonical_sha256(manifest["bundle"])
+        manifest["approval_records"]["bundle"].update({
+            "approved_sha256": bundle_fingerprint,
+            "current_sha256": bundle_fingerprint,
+        })
+
+        errors = self.module.validate_manifest(manifest, mode="mutation-ready")
+
+        self.assertIn("op-02: resolved issue_number must be a positive integer", errors)
+        self.assertIn("op-02: resolved issue URL must match the configured repository", errors)
+        self.assertIn("op-02: closed resolved issue requires explicit reuse or reopen approval", errors)
+
+    def test_accepts_resolved_subissue_with_exact_current_open_snapshot(self):
+        manifest = sample_manifest()
+        existing_issue = {
+            "issue_number": 601,
+            "issue_url": "https://github.com/DEVUNLIMIT/supernova-mobile/issues/601",
+            "approved_state": "open",
+            "current_state": "open",
+            "approved_updated_at": "2026-10-02T08:00:00Z",
+            "current_updated_at": "2026-10-02T08:00:00Z",
+            "approved_content_sha256": "e" * 64,
+            "current_content_sha256": "e" * 64,
+            "checked_at": "2026-10-02T09:05:15+09:00",
+            "closed_issue_action": None,
+        }
+        payload = {
+            "repository": "DEVUNLIMIT/supernova-mobile",
+            "issue_number": 601,
+            "issue_url": "https://github.com/DEVUNLIMIT/supernova-mobile/issues/601",
+        }
+        for operation in (
+            manifest["bundle"]["operations"][1],
+            manifest["operation_ledger"][1],
+        ):
+            operation["kind"] = "resolve_subissue"
+            operation["existing_issue"] = deepcopy(existing_issue)
+            operation["payload"] = deepcopy(payload)
+        manifest["operation_ledger"][1].pop("duplicate_search")
+        bundle_fingerprint = canonical_sha256(manifest["bundle"])
+        manifest["approval_records"]["bundle"].update({
+            "approved_sha256": bundle_fingerprint,
+            "current_sha256": bundle_fingerprint,
+        })
+        manifest["mutation_approval"]["approved_ledger_sha256"] = canonical_sha256(
+            manifest["operation_ledger"]
+        )
+
+        self.assertEqual([], self.module.validate_manifest(manifest, mode="mutation-ready"))
 
     def test_rejects_bundle_task_set_that_differs_from_manifest_tasks(self):
         manifest = sample_manifest()
@@ -876,7 +1063,9 @@ class ValidateManifestTests(unittest.TestCase):
 
     def test_rejects_duplicate_search_older_than_current_preflight(self):
         manifest = sample_manifest()
-        manifest["operation_ledger"][0]["duplicate_search_at"] = "2026-10-02T08:00:00+09:00"
+        manifest["operation_ledger"][0]["duplicate_search"]["searched_at"] = (
+            "2026-10-02T08:00:00+09:00"
+        )
 
         errors = self.module.validate_manifest(manifest, mode="mutation-ready")
 
@@ -884,7 +1073,9 @@ class ValidateManifestTests(unittest.TestCase):
 
     def test_rejects_retry_create_search_older_than_reconciliation(self):
         manifest = retry_manifest()
-        manifest["operation_ledger"][1]["duplicate_search_at"] = "2026-10-02T09:08:00+09:00"
+        manifest["operation_ledger"][1]["duplicate_search"]["searched_at"] = (
+            "2026-10-02T09:08:00+09:00"
+        )
 
         errors = self.module.validate_manifest(manifest, mode="retry-ready")
 
@@ -919,6 +1110,93 @@ class ValidateManifestTests(unittest.TestCase):
         errors = self.module.validate_manifest(manifest, mode="retry-ready")
 
         self.assertIn("retry: approval must follow reconciliation and duplicate searches", errors)
+
+    def test_retry_requires_post_reconciliation_access_and_approved_search_decision(self):
+        manifest = retry_manifest()
+        manifest["preflight"]["checked_at"] = "2026-10-02T09:05:00+09:00"
+        manifest["operation_ledger"][1].pop("duplicate_search")
+        manifest["operation_ledger"][1]["duplicate_search_at"] = (
+            "2026-10-02T09:09:10+09:00"
+        )
+
+        errors = self.module.validate_manifest(manifest, mode="retry-ready")
+
+        self.assertIn("retry: access preflight must follow reconciliation", errors)
+        self.assertIn("op-02: duplicate search requires a typed outcome and decision", errors)
+        self.assertIn("retry: approval must bind duplicate search decisions", errors)
+
+    def test_retry_reconciles_timeout_match_instead_of_creating_duplicate(self):
+        manifest = retry_manifest()
+        manifest["operation_ledger"][1]["duplicate_search"] = {
+            "searched_at": "2026-10-02T09:09:10+09:00",
+            "outcome": "matched_existing",
+            "decision": "reconcile_existing",
+            "matched_issue": {
+                "issue_number": 602,
+                "issue_url": "https://github.com/DEVUNLIMIT/supernova-mobile/issues/602",
+                "state": "open",
+            },
+        }
+        manifest["retry_approval"]["approved_ledger_sha256"] = canonical_sha256(
+            manifest["operation_ledger"]
+        )
+
+        errors = self.module.validate_manifest(manifest, mode="retry-ready")
+
+        self.assertIn(
+            "op-02: matched duplicate must be reconciled before any create retry",
+            errors,
+        )
+
+    def test_recursively_rejects_local_references_in_github_facing_content(self):
+        local_references = (
+            "[report](</tmp/report.pdf#page=1>)",
+            '<a href="/Users/example/report.pdf">report</a>',
+            '<img src="file%3A%2F%2F%2Ftmp%2Fsecret.png">',
+            "file:///private/tmp/meeting.pdf",
+            "C:\\Users\\example\\meeting.pdf",
+            "See the approved file at /workspace/exports/meeting.pdf.",
+        )
+        for local_reference in local_references:
+            with self.subTest(local_reference=local_reference):
+                manifest = sample_manifest()
+                manifest["bundle"]["parent"]["body"] = local_reference
+                manifest["bundle"]["operations"][0]["payload"]["body"] = local_reference
+                manifest["operation_ledger"][0]["payload"]["body"] = local_reference
+                bundle_fingerprint = canonical_sha256(manifest["bundle"])
+                manifest["approval_records"]["bundle"].update({
+                    "approved_sha256": bundle_fingerprint,
+                    "current_sha256": bundle_fingerprint,
+                })
+                manifest["mutation_approval"]["approved_ledger_sha256"] = canonical_sha256(
+                    manifest["operation_ledger"]
+                )
+
+                errors = self.module.validate_manifest(manifest, mode="mutation-ready")
+
+                self.assertIn("bundle: GitHub-facing content contains a local filesystem reference", errors)
+
+    def test_allows_normal_text_that_contains_nonfilesystem_slashes(self):
+        manifest = sample_manifest()
+        manifest["bundle"]["parent"]["body"] = (
+            "Call /api/v1/items and compare the before/after response."
+        )
+        manifest["bundle"]["operations"][0]["payload"]["body"] = (
+            manifest["bundle"]["parent"]["body"]
+        )
+        manifest["operation_ledger"][0]["payload"]["body"] = (
+            manifest["bundle"]["parent"]["body"]
+        )
+        bundle_fingerprint = canonical_sha256(manifest["bundle"])
+        manifest["approval_records"]["bundle"].update({
+            "approved_sha256": bundle_fingerprint,
+            "current_sha256": bundle_fingerprint,
+        })
+        manifest["mutation_approval"]["approved_ledger_sha256"] = canonical_sha256(
+            manifest["operation_ledger"]
+        )
+
+        self.assertEqual([], self.module.validate_manifest(manifest, mode="mutation-ready"))
 
     def test_rejects_changed_local_artifact_bytes(self):
         manifest = sample_manifest()

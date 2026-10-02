@@ -18,6 +18,7 @@ def build_manifest(meeting_id, source_record, pdf, tasks, context=None):
         "approval_records": context.get("approval_records", {}),
         "preflight": context.get("preflight", {}),
         "operation_ledger": context.get("operation_ledger", []),
+        "mutation_approval": context.get("mutation_approval"),
         "retry_approval": context.get("retry_approval"),
     }
 

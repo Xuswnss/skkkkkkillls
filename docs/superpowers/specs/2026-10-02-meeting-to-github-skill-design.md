@@ -98,16 +98,19 @@ Ask focused questions when an answer changes the meeting record or GitHub struct
 Create a draft with these sections:
 
 1. Cover information and status.
-2. Executive summary.
-3. Meeting overview and major workstreams.
-4. Topic-by-topic analysis.
-5. Confirmed decisions.
-6. Complete task inventory with local IDs.
-7. Person-by-person tasks.
-8. Shared and unassigned tasks.
-9. Schedule and explicitly confirmed dependencies.
-10. Open questions.
-11. Transcript interpretation notes and source boundary.
+2. A dedicated table-of-contents page.
+3. Executive summary.
+4. Meeting overview and major workstreams.
+5. Topic-by-topic analysis.
+6. Confirmed decisions.
+7. Complete task inventory with local IDs.
+8. Person-by-person tasks.
+9. Shared and unassigned tasks.
+10. Schedule and explicitly confirmed dependencies.
+11. Open questions.
+12. Transcript interpretation notes and source boundary.
+
+Use concise, plain major-section labels such as `핵심 요약`, `결정 사항`, `할 일`, `일정`, and `확인 필요`; do not turn a summary sentence into a heading.
 
 Each topic uses the same internal structure:
 
@@ -133,6 +136,8 @@ Generate the PDF from the approved Markdown using a deterministic template. Rend
 - inconsistent headings and spacing;
 - missing page numbers or section transitions;
 - inaccurate status labels.
+
+The table of contents occupies its own page, lists every major section, and has an explicit print page break after it.
 
 The PDF remains a local artifact unless the user approves a publication or upload destination.
 
@@ -422,16 +427,16 @@ tasks:
 bundle:
   repository: DEVUNLIMIT/supernova-mobile
   project_url: https://github.com/orgs/DEVUNLIMIT/projects/5
-  parent: {action: create, title: "...", body: "..."}
+  parent: {action: create, title: "...", body: "...", assignees: [], labels: []}
   task_local_ids: [T06]
   subissues:
-    - {local_id: T06, title: "...", body: "..."}
+    - {local_id: T06, title: "...", body: "...", assignees: [], labels: [], project_fields: {}}
   references: []
   operations:
-    - {operation_id: op-01, kind: create_parent, local_id: null, depends_on: []}
-    - {operation_id: op-02, kind: create_subissue, local_id: T06, depends_on: [op-01]}
-    - {operation_id: op-03, kind: link_subissue, local_id: T06, depends_on: [op-01, op-02]}
-    - {operation_id: op-04, kind: add_to_project, local_id: T06, depends_on: [op-02, op-03]}
+    - {operation_id: op-01, kind: create_parent, local_id: null, depends_on: [], payload: {repository: DEVUNLIMIT/supernova-mobile, title: "...", body: "...", assignees: [], labels: []}}
+    - {operation_id: op-02, kind: create_subissue, local_id: T06, depends_on: [op-01], payload: {repository: DEVUNLIMIT/supernova-mobile, title: "...", body: "...", assignees: [], labels: []}}
+    - {operation_id: op-03, kind: link_subissue, local_id: T06, depends_on: [op-01, op-02], payload: {repository: DEVUNLIMIT/supernova-mobile, parent_ref: bundle-parent, child_ref: T06}}
+    - {operation_id: op-04, kind: add_to_project, local_id: T06, depends_on: [op-02, op-03], payload: {project_url: "https://github.com/orgs/DEVUNLIMIT/projects/5", issue_ref: T06, project_fields: {}}}
 approval_records:
   source_record: {artifact: approved-markdown-path, approved: true, approved_sha256: "...", current_sha256: "...", approved_by: "...", approved_at: "..."}
   pdf: {artifact: approved-local-pdf-path, approved: true, approved_sha256: "...", current_sha256: "...", approved_by: "...", approved_at: "..."}
@@ -447,28 +452,38 @@ operation_ledger:
   - operation_id: op-01
     kind: create_parent
     depends_on: []
+    payload: {repository: DEVUNLIMIT/supernova-mobile, title: "...", body: "...", assignees: [], labels: []}
     status: planned
-    duplicate_search_at: "..."
+    duplicate_search: {searched_at: "...", outcome: no_match, decision: create, matched_issue: null}
   - operation_id: op-02
     kind: create_subissue
     local_id: T06
     depends_on: [op-01]
+    payload: {repository: DEVUNLIMIT/supernova-mobile, title: "...", body: "...", assignees: [], labels: []}
     status: planned
-    duplicate_search_at: "..."
+    duplicate_search: {searched_at: "...", outcome: no_match, decision: create, matched_issue: null}
   - operation_id: op-03
     kind: link_subissue
     local_id: T06
     depends_on: [op-01, op-02]
+    payload: {repository: DEVUNLIMIT/supernova-mobile, parent_ref: bundle-parent, child_ref: T06}
     status: planned
   - operation_id: op-04
     kind: add_to_project
     local_id: T06
     depends_on: [op-02, op-03]
+    payload: {project_url: "https://github.com/orgs/DEVUNLIMIT/projects/5", issue_ref: T06, project_fields: {}}
     status: planned
+mutation_approval:
+  approved: true
+  approved_by: "..."
+  approved_at: "..."
+  approved_operation_ids: [op-01, op-02, op-03, op-04]
+  approved_ledger_sha256: "..."
 retry_approval: null
 ```
 
-Relationship bases are typed functional claims with type-specific fields for both sides of the functional relationship plus a source locator and nonblank quote; dates, deadlines, owners, same-meeting membership, co-discussion, similar words, and local-ID order are invalid. A GitHub assignee requires matching user-confirmed mapping provenance. Mutation-ready validation requires nonblank completion and verification data, all four immutable approval records, verified authentication/repository/project access, a fresh parent snapshot, a one-to-one operation ledger whose plan projection exactly matches the approved bundle, typed target-repository success results, and a duplicate-search timestamp before each create. Retry-ready validation parses timezone-aware ledger timestamps and requires reconciliation after all outcomes, dependency-aware stop state, unresolved-only scope, fresh duplicate searches, and renewed narrow approval after reconciliation and all unresolved-create searches.
+Relationship bases are typed functional claims with type-specific fields for both sides of the functional relationship plus a source locator and nonblank quote; dates, deadlines, owners, same-meeting membership, co-discussion, similar words, and local-ID order are invalid. A GitHub assignee requires matching user-confirmed mapping provenance. Mutation-ready validation requires nonblank completion and verification data, all four immutable approval records, verified authentication/repository/project access, fresh selected-parent and resolved-sub-issue snapshots, a one-to-one operation ledger whose complete material payload exactly matches the approved bundle, typed target-repository success results, typed per-create duplicate-search decisions, and a final approval that fingerprints the exact ledger. Retry-ready validation parses timezone-aware ledger timestamps and requires reconciliation after all outcomes, a fresh access preflight after reconciliation, dependency-aware stop state, unresolved-only scope, typed duplicate-search decisions, and renewed narrow approval that fingerprints the reconciled ledger after preflight and searches. GitHub-facing bundle and ledger data recursively reject local filesystem references.
 
 A local PDF path is an approved local artifact locator only. It is never represented as an accessible GitHub attachment unless a separate approved upload or publication produces an accessible URL. Mutation validation receives the top-level workflow-selected or workflow-produced Markdown and PDF paths explicitly, requires both files to exist, and verifies their current bytes against the approval hashes. It never loads a path or URL from evidence or issue content.
 
@@ -518,6 +533,8 @@ A local PDF path is an approved local artifact locator only. It is never represe
 - Korean and English mixed terminology;
 - long task titles;
 - multi-page open-questions section.
+- table-of-contents page, links/entries, and the following page break;
+- concise plain major-section labels rather than sentence-style headings.
 
 Every generated PDF is rendered page by page and visually inspected before delivery.
 

@@ -37,12 +37,27 @@ h3 { font-size: 12pt; margin-bottom: 2mm; }
 
 .meeting-cover {
   break-before: page;
+  break-after: page;
   display: grid;
   align-content: center;
   min-height: 230mm;
   padding: 12mm;
   border: 1px solid var(--line);
   background: var(--surface);
+}
+
+.table-of-contents {
+  break-after: page;
+  min-height: 220mm;
+  padding-top: 12mm;
+}
+
+.toc-list { list-style: none; margin: 8mm 0 0; padding: 0; }
+.toc-list li { border-bottom: 1px solid var(--line); padding: 3mm 0; }
+.toc-list a { color: var(--ink); text-decoration: none; }
+.toc-list a::after {
+  content: leader(".") target-counter(attr(href), page);
+  float: right;
 }
 
 .eyebrow, .card-label, .source-note { color: var(--muted); font-size: 9pt; }
@@ -82,7 +97,7 @@ tr { break-inside: avoid; }
 .report-footer { color: var(--muted); font-size: 8.5pt; margin-top: 8mm; text-align: center; }
 
 @media print {
-  .meeting-section:first-of-type { break-before: page; }
+  .table-of-contents { break-after: page; }
 }
 
 @media screen and (max-width: 700px) {
