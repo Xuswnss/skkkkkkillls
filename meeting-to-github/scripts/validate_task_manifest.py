@@ -18,7 +18,21 @@ _DATE_ONLY_BASIS = re.compile(
 
 
 def _present(value):
-    return value is not None and (not isinstance(value, str) or bool(value.strip()))
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, set, frozenset, dict)):
+        return bool(value)
+    return bool(value)
+
+
+def _present_text(value):
+    return isinstance(value, str) and _present(value)
+
+
+def _present_list(value):
+    return isinstance(value, list) and _present(value)
 
 
 def _validate_shape(manifest):
@@ -54,9 +68,11 @@ def validate_manifest(manifest, mode="draft"):
     errors = []
     if manifest.get("schema_version") != "1.0":
         errors.append("schema_version must be 1.0")
-    for key in ("meeting_id", "source_record", "tasks"):
-        if not _present(manifest.get(key)):
+    for key in ("meeting_id", "source_record"):
+        if not _present_text(manifest.get(key)):
             errors.append(f"missing top-level field: {key}")
+    if not _present_list(manifest.get("tasks")):
+        errors.append("missing top-level field: tasks")
 
     seen_ids = set()
     seen_numbers = set()
@@ -70,11 +86,13 @@ def validate_manifest(manifest, mode="draft"):
         else:
             seen_ids.add(local_id)
 
-        for key in ("title", "topic", "outcome", "evidence"):
-            if not _present(task.get(key)):
+        for key in ("title", "topic", "outcome"):
+            if not _present_text(task.get(key)):
                 errors.append(f"{local_id}: missing {key}")
+        if not _present_list(task.get("evidence")):
+            errors.append(f"{local_id}: missing evidence")
 
-        if _present(task.get("owner_github")) and not _present(task.get("owner_name")):
+        if _present_text(task.get("owner_github")) and not _present_text(task.get("owner_name")):
             errors.append(f"{local_id}: GitHub owner exists without a confirmed owner name")
 
         relationship = task.get("relationship") or {}
@@ -85,12 +103,12 @@ def validate_manifest(manifest, mode="draft"):
         if mode == "mutation-ready" and parent is not None:
             if relationship.get("approved") is not True:
                 errors.append(f"{local_id}: proposed parent is not approved")
-            if not _present(relationship.get("basis")):
+            if not _present_text(relationship.get("basis")):
                 errors.append(f"{local_id}: approved parent requires a relationship basis")
         if _date_only_basis(relationship.get("basis")):
             errors.append(f"{local_id}: relationship basis requires user confirmation")
 
-        if mode == "mutation-ready" and not _present(task.get("completion_criteria")):
+        if mode == "mutation-ready" and not _present_list(task.get("completion_criteria")):
             errors.append(f"{local_id}: completion criteria are required for mutation")
 
         github = task.get("github") or {}
@@ -100,7 +118,7 @@ def validate_manifest(manifest, mode="draft"):
             if number in seen_numbers:
                 errors.append(f"duplicate GitHub issue_number: {number}")
             seen_numbers.add(number)
-        if _present(url):
+        if _present_text(url):
             if url in seen_urls:
                 errors.append(f"duplicate GitHub url: {url}")
             seen_urls.add(url)
@@ -121,7 +139,7 @@ def main(argv=None):
     try:
         with open(args.input, encoding="utf-8") as input_file:
             manifest = json.load(input_file)
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         print(f"input error: {exc}", file=sys.stderr)
         return 2
 

@@ -146,6 +146,53 @@ class ValidateManifestTests(unittest.TestCase):
         errors = self.module.validate_manifest(manifest)
         self.assertIn("duplicate local_id: T06", errors)
 
+    def test_rejects_empty_completion_criteria_for_mutation(self):
+        manifest = sample_manifest()
+        manifest["tasks"][0]["completion_criteria"] = []
+        errors = self.module.validate_manifest(manifest, mode="mutation-ready")
+        self.assertIn("T06: completion criteria are required for mutation", errors)
+
+    def test_rejects_empty_relationship_basis_for_mutation(self):
+        manifest = sample_manifest()
+        manifest["tasks"][0]["relationship"] = {
+            "proposed_parent": 448,
+            "basis": [],
+            "approved": True,
+        }
+        errors = self.module.validate_manifest(manifest, mode="mutation-ready")
+        self.assertIn("T06: approved parent requires a relationship basis", errors)
+
+    def test_rejects_empty_owner_name_with_github_owner(self):
+        manifest = sample_manifest()
+        manifest["tasks"][0]["owner_name"] = []
+        manifest["tasks"][0]["owner_github"] = "guessed-user"
+        errors = self.module.validate_manifest(manifest, mode="mutation-ready")
+        self.assertIn("T06: GitHub owner exists without a confirmed owner name", errors)
+
+    def test_rejects_empty_evidence(self):
+        manifest = sample_manifest()
+        manifest["tasks"][0]["evidence"] = []
+        errors = self.module.validate_manifest(manifest)
+        self.assertIn("T06: missing evidence", errors)
+
+    def test_cli_rejects_invalid_utf8_as_input_error(self):
+        script = ROOT / "scripts" / "validate_task_manifest.py"
+        with tempfile.TemporaryDirectory() as directory:
+            input_path = Path(directory) / "invalid-utf8.json"
+            input_path.write_bytes(b"{\xff")
+
+            result = subprocess.run(
+                [sys.executable, str(script), "--input", str(input_path)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(2, result.returncode)
+        self.assertEqual("", result.stdout)
+        self.assertIn("input error:", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
